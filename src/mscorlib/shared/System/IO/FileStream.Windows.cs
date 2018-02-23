@@ -961,7 +961,7 @@ namespace System.IO
             return completionSource.Task;
         }
 
-        private Task WriteAsyncInternal(ReadOnlyMemory<byte> source, CancellationToken cancellationToken)
+        private ValueTask WriteAsyncInternal(ReadOnlyMemory<byte> source, CancellationToken cancellationToken)
         {
             Debug.Assert(_useAsyncIO);
             Debug.Assert((_readPos == 0 && _readLength == 0 && _writePos >= 0) || (_writePos == 0 && _readPos <= _readLength), "We're either reading or writing, but not both.");
@@ -1005,7 +1005,7 @@ namespace System.IO
                     // completely, we want to do the asynchronous flush/write as part of this operation 
                     // rather than waiting until the next write that fills the buffer.
                     if (source.Length != remainingBuffer)
-                        return Task.CompletedTask;
+                        return default;
 
                     Debug.Assert(_writePos == _bufferLength);
                 }
@@ -1051,7 +1051,7 @@ namespace System.IO
                     flushTask.IsFaulted ||
                     flushTask.IsCanceled)
                 {
-                    return flushTask;
+                    return new ValueTask(flushTask);
                 }
             }
 
@@ -1061,10 +1061,10 @@ namespace System.IO
             // Finally, issue the write asynchronously, and return a Task that logically
             // represents the write operation, including any flushing done.
             Task writeTask = WriteAsyncInternalCore(source, cancellationToken);
-            return
+            return new ValueTask(
                 (flushTask == null || flushTask.Status == TaskStatus.RanToCompletion) ? writeTask :
                 (writeTask.Status == TaskStatus.RanToCompletion) ? flushTask :
-                Task.WhenAll(flushTask, writeTask);
+                Task.WhenAll(flushTask, writeTask));
         }
 
         private unsafe Task WriteAsyncInternalCore(ReadOnlyMemory<byte> source, CancellationToken cancellationToken)

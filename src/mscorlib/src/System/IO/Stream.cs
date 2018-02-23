@@ -694,29 +694,29 @@ namespace System.IO
                         : BeginEndWriteAsync(buffer, offset, count);
         }
 
-        public virtual Task WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default(CancellationToken))
+        public virtual ValueTask WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default(CancellationToken))
         {
             if (MemoryMarshal.TryGetArray(source, out ArraySegment<byte> array))
             {
-                return WriteAsync(array.Array, array.Offset, array.Count, cancellationToken);
+                return new ValueTask(WriteAsync(array.Array, array.Offset, array.Count, cancellationToken));
             }
             else
             {
                 byte[] buffer = ArrayPool<byte>.Shared.Rent(source.Length);
                 source.Span.CopyTo(buffer);
-                return FinishWriteAsync(WriteAsync(buffer, 0, source.Length, cancellationToken), buffer);
+                return new ValueTask(FinishWriteAsync(WriteAsync(buffer, 0, source.Length, cancellationToken), buffer));
+            }
+        }
 
-                async Task FinishWriteAsync(Task writeTask, byte[] localBuffer)
-                {
-                    try
-                    {
-                        await writeTask.ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        ArrayPool<byte>.Shared.Return(localBuffer);
-                    }
-                }
+        private async Task FinishWriteAsync(Task writeTask, byte[] localBuffer)
+        {
+            try
+            {
+                await writeTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(localBuffer);
             }
         }
 
@@ -1018,11 +1018,11 @@ namespace System.IO
                     Task.CompletedTask;
             }
 
-            public override Task WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default(CancellationToken))
+            public override ValueTask WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default(CancellationToken))
             {
                 return cancellationToken.IsCancellationRequested ?
-                    Task.FromCanceled(cancellationToken) :
-                    Task.CompletedTask;
+                    new ValueTask(Task.FromCanceled(cancellationToken)) :
+                    default;
             }
 
             public override void WriteByte(byte value)

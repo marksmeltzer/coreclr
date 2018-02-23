@@ -377,38 +377,50 @@ namespace System.Runtime.CompilerServices
             IAsyncStateMachineBox box = GetStateMachineBox(ref stateMachine);
 
             // The null tests here ensure that the jit can optimize away the interface
-            // tests when TAwaiter is is a ref type.
+            // tests when TAwaiter is a ref type.
+
             if ((null != (object)default(TAwaiter)) && (awaiter is ITaskAwaiter))
             {
                 ref TaskAwaiter ta = ref Unsafe.As<TAwaiter, TaskAwaiter>(ref awaiter); // relies on TaskAwaiter/TaskAwaiter<T> having the same layout
                 TaskAwaiter.UnsafeOnCompletedInternal(ta.m_task, box, continueOnCapturedContext: true);
+                return;
             }
-            else if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredTaskAwaiter))
+
+            if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredTaskAwaiter))
             {
                 ref ConfiguredTaskAwaitable.ConfiguredTaskAwaiter ta = ref Unsafe.As<TAwaiter, ConfiguredTaskAwaitable.ConfiguredTaskAwaiter>(ref awaiter);
                 TaskAwaiter.UnsafeOnCompletedInternal(ta.m_task, box, ta.m_continueOnCapturedContext);
+                return;
             }
-            else if ((null != (object)default(TAwaiter)) && (awaiter is IValueTaskAwaiter))
+
+            if ((null != (object)default(TAwaiter)) && (awaiter is IValueTaskAwaiter))
             {
                 Task t = ((IValueTaskAwaiter)awaiter).GetTask();
-                TaskAwaiter.UnsafeOnCompletedInternal(t, box, continueOnCapturedContext: true);
+                if (t != null)
+                {
+                    TaskAwaiter.UnsafeOnCompletedInternal(t, box, continueOnCapturedContext: true);
+                    return;
+                }
             }
-            else if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredValueTaskAwaiter))
+
+            if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredValueTaskAwaiter))
             {
                 Task t = ((IConfiguredValueTaskAwaiter)awaiter).GetTask(out bool continueOnCapturedContext);
-                TaskAwaiter.UnsafeOnCompletedInternal(t, box, continueOnCapturedContext);
+                if (t != null)
+                {
+                    TaskAwaiter.UnsafeOnCompletedInternal(t, box, continueOnCapturedContext);
+                    return;
+                }
             }
+
             // The awaiter isn't specially known. Fall back to doing a normal await.
-            else
+            try
             {
-                try
-                {
-                    awaiter.UnsafeOnCompleted(box.MoveNextAction);
-                }
-                catch (Exception e)
-                {
-                    AsyncMethodBuilderCore.ThrowAsync(e, targetContext: null);
-                }
+                awaiter.UnsafeOnCompleted(box.MoveNextAction);
+            }
+            catch (Exception e)
+            {
+                AsyncMethodBuilderCore.ThrowAsync(e, targetContext: null);
             }
         }
 
