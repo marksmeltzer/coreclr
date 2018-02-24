@@ -5,6 +5,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+#if !netstandard
+using Internal.Runtime.CompilerServices;
+#endif
 
 namespace System.Runtime.CompilerServices
 {
@@ -70,7 +73,12 @@ namespace System.Runtime.CompilerServices
                 }
                 else if (_value._obj != null)
                 {
-                    _value.UnsafeValueTaskObject.OnCompleted(continuation, continueOnCapturedContext: _value.ContinueOnCapturedContext);
+                    ValueTaskObjectOnCompletedFlags flags = ValueTaskObjectOnCompletedFlags.FlowExecutionContext;
+                    if (_value.ContinueOnCapturedContext)
+                    {
+                        flags |= ValueTaskObjectOnCompletedFlags.UseSchedulingContext;
+                    }
+                    _value.UnsafeValueTaskObject.OnCompleted(continuation, flags);
                 }
                 else
                 {
@@ -87,7 +95,12 @@ namespace System.Runtime.CompilerServices
                 }
                 else if (_value._obj != null)
                 {
-                    _value.UnsafeValueTaskObject.UnsafeOnCompleted(continuation, _value.ContinueOnCapturedContext);
+                    ValueTaskObjectOnCompletedFlags flags = ValueTaskObjectOnCompletedFlags.None;
+                    if (_value.ContinueOnCapturedContext)
+                    {
+                        flags |= ValueTaskObjectOnCompletedFlags.UseSchedulingContext;
+                    }
+                    _value.UnsafeValueTaskObject.OnCompleted(continuation, flags);
                 }
                 else
                 {
@@ -164,7 +177,12 @@ namespace System.Runtime.CompilerServices
                 }
                 else if (_value._obj != null)
                 {
-                    _value.UnsafeValueTaskObject.OnCompleted(continuation, _value.ContinueOnCapturedContext);
+                    ValueTaskObjectOnCompletedFlags flags = ValueTaskObjectOnCompletedFlags.FlowExecutionContext;
+                    if (_value.ContinueOnCapturedContext)
+                    {
+                        flags |= ValueTaskObjectOnCompletedFlags.UseSchedulingContext;
+                    }
+                    _value.UnsafeValueTaskObject.OnCompleted(continuation, flags);
                 }
                 else
                 {
@@ -181,7 +199,12 @@ namespace System.Runtime.CompilerServices
                 }
                 else if (_value._obj != null)
                 {
-                    _value.UnsafeValueTaskObject.UnsafeOnCompleted(continuation, _value.ContinueOnCapturedContext);
+                    ValueTaskObjectOnCompletedFlags flags = ValueTaskObjectOnCompletedFlags.None;
+                    if (_value.ContinueOnCapturedContext)
+                    {
+                        flags |= ValueTaskObjectOnCompletedFlags.UseSchedulingContext;
+                    }
+                    _value.UnsafeValueTaskObject.OnCompleted(continuation, flags);
                 }
                 else
                 {

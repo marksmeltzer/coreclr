@@ -52,7 +52,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.OnCompleted(continuation, continueOnCapturedContext: true);
+                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext | ValueTaskObjectOnCompletedFlags.FlowExecutionContext);
             }
             else
             {
@@ -69,7 +69,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.UnsafeOnCompleted(continuation, continueOnCapturedContext: true);
+                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext);
             }
             else
             {
@@ -120,7 +120,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.OnCompleted(continuation, continueOnCapturedContext: true);
+                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext | ValueTaskObjectOnCompletedFlags.FlowExecutionContext);
             }
             else
             {
@@ -137,7 +137,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.UnsafeOnCompleted(continuation, continueOnCapturedContext: true);
+                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext);
             }
             else
             {

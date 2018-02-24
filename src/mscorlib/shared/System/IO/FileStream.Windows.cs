@@ -1319,7 +1319,7 @@ namespace System.IO
                 int bufferedBytes = _readLength - _readPos;
                 if (bufferedBytes > 0)
                 {
-                    await destination.WriteAsync(GetBuffer(), _readPos, bufferedBytes, cancellationToken).ConfigureAwait(false);
+                    await destination.WriteAsync(new ReadOnlyMemory<byte>(GetBuffer(), _readPos, bufferedBytes), cancellationToken).ConfigureAwait(false);
                     _readPos = _readLength = 0;
                 }
             }
@@ -1345,7 +1345,6 @@ namespace System.IO
             // Further, typically the CopyToAsync buffer size will be larger than that used by the FileStream, such that
             // we'd likely be unable to use it anyway.  Instead, we rent the buffer from a pool.
             byte[] copyBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-            bufferSize = 0; // repurpose bufferSize to be the high water mark for the buffer, to avoid an extra field in the state machine
 
             // Allocate an Overlapped we can use repeatedly for all operations
             var awaitableOverlapped = new PreAllocatedOverlapped(AsyncCopyToAwaitable.s_callback, readAwaitable, copyBuffer);
@@ -1452,13 +1451,6 @@ namespace System.IO
                         {
                             readAwaitable._position += numBytesRead;
                         }
-
-                        // (and keep track of the maximum number of bytes in the buffer we used, to avoid excessive and unnecessary
-                        // clearing of the buffer before we return it to the pool)
-                        if (numBytesRead > bufferSize)
-                        {
-                            bufferSize = numBytesRead;
-                        }
                     }
                     finally
                     {
@@ -1479,7 +1471,7 @@ namespace System.IO
                     }
 
                     // Write out the read data.
-                    await destination.WriteAsync(copyBuffer, 0, (int)readAwaitable._numBytes, cancellationToken).ConfigureAwait(false);
+                    await destination.WriteAsync(new ReadOnlyMemory<byte>(copyBuffer, 0, (int)readAwaitable._numBytes), cancellationToken).ConfigureAwait(false);
                 }
             }
             finally
@@ -1488,8 +1480,7 @@ namespace System.IO
                 cancellationReg.Dispose();
                 awaitableOverlapped.Dispose();
 
-                Array.Clear(copyBuffer, 0, bufferSize);
-                ArrayPool<byte>.Shared.Return(copyBuffer, clearArray: false);
+                ArrayPool<byte>.Shared.Return(copyBuffer);
 
                 // Make sure the stream's current position reflects where we ended up
                 if (!_fileHandle.IsClosed && CanSeek)

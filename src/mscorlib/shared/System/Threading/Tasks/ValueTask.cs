@@ -167,13 +167,28 @@ namespace System.Threading.Tasks
                 }
                 catch (Exception exc)
                 {
+                    if (exc is OperationCanceledException oce)
+                    {
 #if netstandard
-                    var tcs = new TaskCompletionSource<bool>();
-                    tcs.TrySetException(exc);
-                    return tcs.Task;
+                        var tcs = new TaskCompletionSource<bool>();
+                        tcs.TrySetCanceled();
+                        return tcs.Task;
 #else
-                    return Task.FromException(exc);
+                        var tcs = new Task<VoidTaskResult>();
+                        tcs.TrySetCanceled(oce.CancellationToken, oce);
+                        return tcs;
 #endif
+                    }
+                    else
+                    {
+#if netstandard
+                        var tcs = new TaskCompletionSource<bool>();
+                        tcs.TrySetException(exc);
+                        return tcs.Task;
+#else
+                        return Task.FromException(exc);
+#endif
+                    }
                 }
             }
 
@@ -199,7 +214,7 @@ namespace System.Threading.Tasks
             public ValueTaskObjectMarshaler(IValueTaskObject task)
             {
                 _task = task;
-                task.UnsafeOnCompleted(new Action(HasCompleted), continueOnCapturedContext: false);
+                task.OnCompleted(new Action(HasCompleted), ValueTaskObjectOnCompletedFlags.None);
             }
 
             private void HasCompleted()
@@ -211,7 +226,18 @@ namespace System.Threading.Tasks
                 }
                 catch (Exception exc)
                 {
-                    TrySetException(exc);
+                    if (exc is OperationCanceledException oce)
+                    {
+#if netstandard
+                        TrySetCanceled();
+#else
+                        TrySetCanceled(oce.CancellationToken, oce);
+#endif
+                    }
+                    else
+                    {
+                        TrySetException(exc);
+                    }
                 }
             }
         }
@@ -454,13 +480,28 @@ namespace System.Threading.Tasks
                 }
                 catch (Exception exc)
                 {
+                    if (exc is OperationCanceledException oce)
+                    {
 #if netstandard
-                    var tcs = new TaskCompletionSource<TResult>();
-                    tcs.TrySetException(exc);
-                    return tcs.Task;
+                        var tcs = new TaskCompletionSource<TResult>();
+                        tcs.TrySetCanceled();
+                        return tcs.Task;
 #else
-                    return Task.FromException<TResult>(exc);
+                        var tcs = new Task<TResult>();
+                        tcs.TrySetCanceled(oce.CancellationToken, oce);
+                        return tcs;
 #endif
+                    }
+                    else
+                    {
+#if netstandard
+                        var tcs = new TaskCompletionSource<TResult>();
+                        tcs.TrySetException(exc);
+                        return tcs.Task;
+#else
+                        return Task.FromException<TResult>(exc);
+#endif
+                    }
                 }
             }
 
@@ -486,7 +527,7 @@ namespace System.Threading.Tasks
             public ValueTaskObjectMarshaler(IValueTaskObject<TResult> task)
             {
                 _obj = task;
-                task.UnsafeOnCompleted(new Action(HasCompleted), continueOnCapturedContext: false);
+                task.OnCompleted(new Action(HasCompleted), ValueTaskObjectOnCompletedFlags.None);
             }
 
             private void HasCompleted()
@@ -497,7 +538,18 @@ namespace System.Threading.Tasks
                 }
                 catch (Exception exc)
                 {
-                    TrySetException(exc);
+                    if (exc is OperationCanceledException oce)
+                    {
+#if netstandard
+                        TrySetCanceled();
+#else
+                        TrySetCanceled(oce.CancellationToken, oce);
+#endif
+                    }
+                    else
+                    {
+                        TrySetException(exc);
+                    }
                 }
             }
         }
