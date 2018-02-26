@@ -383,44 +383,27 @@ namespace System.Runtime.CompilerServices
             {
                 ref TaskAwaiter ta = ref Unsafe.As<TAwaiter, TaskAwaiter>(ref awaiter); // relies on TaskAwaiter/TaskAwaiter<T> having the same layout
                 TaskAwaiter.UnsafeOnCompletedInternal(ta.m_task, box, continueOnCapturedContext: true);
-                return;
             }
-
-            if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredTaskAwaiter))
+            else if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredTaskAwaiter))
             {
                 ref ConfiguredTaskAwaitable.ConfiguredTaskAwaiter ta = ref Unsafe.As<TAwaiter, ConfiguredTaskAwaitable.ConfiguredTaskAwaiter>(ref awaiter);
                 TaskAwaiter.UnsafeOnCompletedInternal(ta.m_task, box, ta.m_continueOnCapturedContext);
-                return;
             }
-
-            if ((null != (object)default(TAwaiter)) && (awaiter is IValueTaskAwaiter))
+            else if ((null != (object)default(TAwaiter)) && (awaiter is IValueTaskAwaiter))
             {
-                Task t = ((IValueTaskAwaiter)awaiter).GetTask();
-                if (t != null)
+                ((IValueTaskAwaiter)awaiter).AwaitUnsafeOnCompleted(box);
+            }
+            else
+            {
+                // The awaiter isn't specially known. Fall back to doing a normal await.
+                try
                 {
-                    TaskAwaiter.UnsafeOnCompletedInternal(t, box, continueOnCapturedContext: true);
-                    return;
+                    awaiter.UnsafeOnCompleted(box.MoveNextAction);
                 }
-            }
-
-            if ((null != (object)default(TAwaiter)) && (awaiter is IConfiguredValueTaskAwaiter))
-            {
-                Task t = ((IConfiguredValueTaskAwaiter)awaiter).GetTask(out bool continueOnCapturedContext);
-                if (t != null)
+                catch (Exception e)
                 {
-                    TaskAwaiter.UnsafeOnCompletedInternal(t, box, continueOnCapturedContext);
-                    return;
+                    AsyncMethodBuilderCore.ThrowAsync(e, targetContext: null);
                 }
-            }
-
-            // The awaiter isn't specially known. Fall back to doing a normal await.
-            try
-            {
-                awaiter.UnsafeOnCompleted(box.MoveNextAction);
-            }
-            catch (Exception e)
-            {
-                AsyncMethodBuilderCore.ThrowAsync(e, targetContext: null);
             }
         }
 
@@ -535,13 +518,17 @@ namespace System.Runtime.CompilerServices
             public ExecutionContext Context;
 
             /// <summary>A delegate to the <see cref="MoveNext"/> method.</summary>
-            public Action MoveNextAction =>
-                _moveNextAction ??
-                (_moveNextAction = AsyncCausalityTracer.LoggingOn ? AsyncMethodBuilderCore.OutputAsyncCausalityEvents(this, new Action(MoveNext)) : new Action(MoveNext));
+            public Action MoveNextAction => _moveNextAction ?? (_moveNextAction = new Action(MoveNext));
 
             /// <summary>Calls MoveNext on <see cref="StateMachine"/></summary>
             public void MoveNext()
             {
+                bool loggingOn = AsyncCausalityTracer.LoggingOn;
+                if (loggingOn)
+                {
+                    AsyncCausalityTracer.TraceSynchronousWorkStart(CausalityTraceLevel.Required, Id, CausalitySynchronousWork.Execution);
+                }
+
                 ExecutionContext context = Context;
                 if (context == null)
                 {
@@ -559,6 +546,11 @@ namespace System.Runtime.CompilerServices
                 {
                     GC.SuppressFinalize(this);
                 }
+
+                if (loggingOn)
+                {
+                    AsyncCausalityTracer.TraceSynchronousWorkCompletion(CausalityTraceLevel.Required, CausalitySynchronousWork.Execution);
+                }
             }
 
             /// <summary>
@@ -566,8 +558,8 @@ namespace System.Runtime.CompilerServices
             /// that the state machine object may be queued directly as a continuation into a Task's
             /// continuation slot/list.
             /// </summary>
-            /// <param name="completedTask">The completing task that caused this method to be invoked, if there was one.</param>
-            void ITaskCompletionAction.Invoke(Task completedTask) => MoveNext();
+            /// <param name="ignored">The completing task that caused this method to be invoked, if there was one.</param>
+            void ITaskCompletionAction.Invoke(Task ignored) => MoveNext();
 
             /// <summary>Signals to Task's continuation logic that <see cref="Invoke"/> runs arbitrary user code via MoveNext.</summary>
             bool ITaskCompletionAction.InvokeMayRunArbitraryCode => true;
@@ -986,14 +978,6 @@ namespace System.Runtime.CompilerServices
             }
             return sb.ToString();
         }
-
-        internal static Action OutputAsyncCausalityEvents(Task task, Action continuation) =>
-            CreateContinuationWrapper(continuation, (innerContinuation, innerTask) =>
-            {
-                AsyncCausalityTracer.TraceSynchronousWorkStart(CausalityTraceLevel.Required, innerTask.Id, CausalitySynchronousWork.Execution);
-                innerContinuation.Invoke(); // Invoke the original continuation
-                AsyncCausalityTracer.TraceSynchronousWorkCompletion(CausalityTraceLevel.Required, CausalitySynchronousWork.Execution);
-            }, task);
 
         internal static Action CreateContinuationWrapper(Action continuation, Action<Action,Task> invokeAction, Task innerTask) =>
             new ContinuationWrapper(continuation, invokeAction, innerTask).Invoke;

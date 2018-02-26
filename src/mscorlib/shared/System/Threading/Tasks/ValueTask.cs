@@ -28,7 +28,7 @@ namespace System.Threading.Tasks
         private static readonly Task s_completedTask = Task.Delay(0);
 #endif
 
-        /// <summary>null if representing a successful synchronous completion, otherwise a <see cref="Task"/> or a <see cref="IValueTaskObject"/>.</summary>
+        /// <summary>null if representing a successful synchronous completion, otherwise a <see cref="Task"/> or a <see cref="IValueTaskSource"/>.</summary>
         internal readonly object _obj;
         /// <summary>Flags providing additional details about the ValueTask's contents and behavior.</summary>
         internal readonly ValueTaskFlags _flags;
@@ -49,17 +49,17 @@ namespace System.Threading.Tasks
             _flags = ValueTaskFlags.ObjectIsTask;
         }
 
-        /// <summary>Initialize the <see cref="ValueTask"/> with a <see cref="IValueTaskObject"/> object that represents the operation.</summary>
-        /// <param name="obj">The object.</param>
+        /// <summary>Initialize the <see cref="ValueTask"/> with a <see cref="IValueTaskSource"/> object that represents the operation.</summary>
+        /// <param name="source">The source.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask(IValueTaskObject obj)
+        public ValueTask(IValueTaskSource source)
         {
-            if (obj == null)
+            if (source == null)
             {
-                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.task);
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            _obj = obj;
+            _obj = source;
             _flags = 0;
         }
 
@@ -99,15 +99,15 @@ namespace System.Threading.Tasks
             }
         }
 
-        /// <summary>Returns the <see cref="IValueTaskObject"/> stored in <see cref="_obj"/>.  This uses <see cref="Unsafe"/>.</summary>
-        internal IValueTaskObject UnsafeValueTaskObject
+        /// <summary>Returns the <see cref="IValueTaskSource"/> stored in <see cref="_obj"/>.  This uses <see cref="Unsafe"/>.</summary>
+        internal IValueTaskSource UnsafeValueTaskSource
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 Debug.Assert(!ObjectIsTask);
-                Debug.Assert(_obj is IValueTaskObject);
-                return Unsafe.As<IValueTaskObject>(_obj);
+                Debug.Assert(_obj is IValueTaskSource);
+                return Unsafe.As<IValueTaskSource>(_obj);
             }
         }
 
@@ -145,12 +145,12 @@ namespace System.Threading.Tasks
                 Task.CompletedTask :
 #endif
             ObjectIsTask ? UnsafeTask :
-            GetTaskForValueTaskObject();
+            GetTaskForValueTaskSource();
 
-        /// <summary>Creates a <see cref="Task"/> to represent the <see cref="IValueTaskObject"/>.</summary>
-        private Task GetTaskForValueTaskObject()
+        /// <summary>Creates a <see cref="Task"/> to represent the <see cref="IValueTaskSource"/>.</summary>
+        private Task GetTaskForValueTaskSource()
         {
-            IValueTaskObject t = UnsafeValueTaskObject;
+            IValueTaskSource t = UnsafeValueTaskSource;
             if (t.IsCompleted)
             {
                 try
@@ -192,7 +192,7 @@ namespace System.Threading.Tasks
                 }
             }
 
-            var m = new ValueTaskObjectMarshaler(t);
+            var m = new ValueTaskSourceTask(t);
             return
 #if netstandard
                 m.Task;
@@ -201,44 +201,45 @@ namespace System.Threading.Tasks
 #endif
         }
 
-        /// <summary>Type used to create a <see cref="Task"/> to represent a <see cref="IValueTaskObject"/>.</summary>
-        private sealed class ValueTaskObjectMarshaler :
+        /// <summary>Type used to create a <see cref="Task"/> to represent a <see cref="IValueTaskSource"/>.</summary>
+        private sealed class ValueTaskSourceTask :
 #if netstandard
             TaskCompletionSource<bool>
 #else
             Task<VoidTaskResult>
 #endif
         {
-            private readonly IValueTaskObject _task;
-
-            public ValueTaskObjectMarshaler(IValueTaskObject task)
+            private static readonly Action<object> s_completionAction = state =>
             {
-                _task = task;
-                task.OnCompleted(new Action(HasCompleted), ValueTaskObjectOnCompletedFlags.None);
-            }
-
-            private void HasCompleted()
-            {
+                var vtst = (ValueTaskSourceTask)state;
                 try
                 {
-                    _task.GetResult();
-                    TrySetResult(default);
+                    vtst._source.GetResult();
+                    vtst.TrySetResult(default);
                 }
                 catch (Exception exc)
                 {
                     if (exc is OperationCanceledException oce)
                     {
 #if netstandard
-                        TrySetCanceled();
+                        vtst.TrySetCanceled();
 #else
-                        TrySetCanceled(oce.CancellationToken, oce);
+                        vtst.TrySetCanceled(oce.CancellationToken, oce);
 #endif
                     }
                     else
                     {
-                        TrySetException(exc);
+                        vtst.TrySetException(exc);
                     }
                 }
+            };
+
+            private readonly IValueTaskSource _source;
+
+            public ValueTaskSourceTask(IValueTaskSource source)
+            {
+                _source = source;
+                source.OnCompleted(s_completionAction, this, ValueTaskSourceOnCompletedFlags.None);
             }
         }
 
@@ -246,7 +247,7 @@ namespace System.Threading.Tasks
         public bool IsCompleted
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => _obj == null || (ObjectIsTask ? UnsafeTask.IsCompleted : UnsafeValueTaskObject.IsCompleted);
+            get => _obj == null || (ObjectIsTask ? UnsafeTask.IsCompleted : UnsafeValueTaskSource.IsCompleted);
         }
 
         /// <summary>Gets whether the <see cref="ValueTask"/> represents a successfully completed operation.</summary>
@@ -261,7 +262,7 @@ namespace System.Threading.Tasks
 #else
                     UnsafeTask.IsCompletedSuccessfully :
 #endif
-                    UnsafeValueTaskObject.IsCompletedSuccessfully);
+                    UnsafeValueTaskSource.IsCompletedSuccessfully);
         }
 
         /// <summary>Gets whether the <see cref="ValueTask"/> represents a failed operation.</summary>
@@ -279,14 +280,14 @@ namespace System.Threading.Tasks
                     return UnsafeTask.IsFaulted;
                 }
 
-                IValueTaskObject vt = UnsafeValueTaskObject;
+                IValueTaskSource vt = UnsafeValueTaskSource;
                 return vt.IsCompleted && !vt.IsCompletedSuccessfully;
             }
         }
 
         /// <summary>Gets whether the <see cref="ValueTask"/> represents a canceled operation.</summary>
         /// <remarks>
-        /// If the <see cref="ValueTask"/> is backed by a result or by a <see cref="IValueTaskObject"/>,
+        /// If the <see cref="ValueTask"/> is backed by a result or by a <see cref="IValueTaskSource"/>,
         /// this will always return false.  If it's backed by a <see cref="Task"/>, it'll return the
         /// value of the task's <see cref="Task.IsCanceled"/> property.
         /// </remarks>
@@ -319,7 +320,7 @@ namespace System.Threading.Tasks
     [StructLayout(LayoutKind.Auto)]
     public readonly struct ValueTask<TResult> : IEquatable<ValueTask<TResult>>
     {
-        /// <summary>null if <see cref="_result"/> has the result, otherwise a <see cref="Task{TResult}"/> or a <see cref="IValueTaskObject{TResult}"/>.</summary>
+        /// <summary>null if <see cref="_result"/> has the result, otherwise a <see cref="Task{TResult}"/> or a <see cref="IValueTaskSource{TResult}"/>.</summary>
         internal readonly object _obj;
         /// <summary>The result to be used if the operation completed successfully synchronously.</summary>
         internal readonly TResult _result;
@@ -354,17 +355,17 @@ namespace System.Threading.Tasks
             _flags = ValueTaskFlags.ObjectIsTask;
         }
 
-        /// <summary>Initialize the <see cref="ValueTask{TResult}"/> with a <see cref="IValueTaskObject{TResult}"/> object that represents the operation.</summary>
-        /// <param name="obj">The object.</param>
+        /// <summary>Initialize the <see cref="ValueTask{TResult}"/> with a <see cref="IValueTaskSource{TResult}"/> object that represents the operation.</summary>
+        /// <param name="source">The source.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask(IValueTaskObject<TResult> obj)
+        public ValueTask(IValueTaskSource<TResult> source)
         {
-            if (obj == null)
+            if (source == null)
             {
-                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.task);
+                ThrowHelper.ThrowArgumentNullException(ExceptionArgument.source);
             }
 
-            _obj = obj;
+            _obj = source;
             _result = default;
             _flags = 0;
         }
@@ -407,15 +408,15 @@ namespace System.Threading.Tasks
             }
         }
 
-        /// <summary>Returns the <see cref="IValueTaskObject<typeparamref name="TResult"/>>"/> stored in <see cref="_obj"/>.  This uses <see cref="Unsafe"/>.</summary>
-        internal IValueTaskObject<TResult> UnsafeValueTaskObject
+        /// <summary>Returns the <see cref="IValueTaskSource<typeparamref name="TResult"/>>"/> stored in <see cref="_obj"/>.  This uses <see cref="Unsafe"/>.</summary>
+        internal IValueTaskSource<TResult> UnsafeValueTaskSource
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 Debug.Assert(!ObjectIsTask);
-                Debug.Assert(_obj is IValueTaskObject<TResult>);
-                return Unsafe.As<IValueTaskObject<TResult>>(_obj);
+                Debug.Assert(_obj is IValueTaskSource<TResult>);
+                return Unsafe.As<IValueTaskSource<TResult>>(_obj);
             }
         }
 
@@ -459,12 +460,12 @@ namespace System.Threading.Tasks
                 AsyncTaskMethodBuilder<TResult>.GetTaskForResult(_result) :
 #endif
             ObjectIsTask ? UnsafeTask :
-            GetTaskForValueTaskObject();
+            GetTaskForValueTaskSource();
 
-        /// <summary>Creates a <see cref="Task{TResult}"/> to represent the <see cref="IValueTaskObject{TResult}"/>.</summary>
-        private Task<TResult> GetTaskForValueTaskObject()
+        /// <summary>Creates a <see cref="Task{TResult}"/> to represent the <see cref="IValueTaskSource{TResult}"/>.</summary>
+        private Task<TResult> GetTaskForValueTaskSource()
         {
-            IValueTaskObject<TResult> t = UnsafeValueTaskObject;
+            IValueTaskSource<TResult> t = UnsafeValueTaskSource;
             if (t.IsCompleted)
             {
                 try
@@ -505,7 +506,7 @@ namespace System.Threading.Tasks
                 }
             }
 
-            var m = new ValueTaskObjectMarshaler(t);
+            var m = new ValueTaskSourceTask(t);
             return
 #if netstandard
                 m.Task;
@@ -514,43 +515,44 @@ namespace System.Threading.Tasks
 #endif
         }
 
-        /// <summary>Type used to create a <see cref="Task{TResult}"/> to represent a <see cref="IValueTaskObject{TResult}"/>.</summary>
-        private sealed class ValueTaskObjectMarshaler :
+        /// <summary>Type used to create a <see cref="Task{TResult}"/> to represent a <see cref="IValueTaskSource{TResult}"/>.</summary>
+        private sealed class ValueTaskSourceTask :
 #if netstandard
             TaskCompletionSource<TResult>
 #else
             Task<TResult>
 #endif
         {
-            private readonly IValueTaskObject<TResult> _obj;
-
-            public ValueTaskObjectMarshaler(IValueTaskObject<TResult> task)
+            private static readonly Action<object> s_completionAction = state =>
             {
-                _obj = task;
-                task.OnCompleted(new Action(HasCompleted), ValueTaskObjectOnCompletedFlags.None);
-            }
-
-            private void HasCompleted()
-            {
+                var vtst = (ValueTaskSourceTask)state;
                 try
                 {
-                    TrySetResult(_obj.GetResult());
+                    vtst.TrySetResult(vtst._source.GetResult());
                 }
                 catch (Exception exc)
                 {
                     if (exc is OperationCanceledException oce)
                     {
 #if netstandard
-                        TrySetCanceled();
+                        vtst.TrySetCanceled();
 #else
-                        TrySetCanceled(oce.CancellationToken, oce);
+                        vtst.TrySetCanceled(oce.CancellationToken, oce);
 #endif
                     }
                     else
                     {
-                        TrySetException(exc);
+                        vtst.TrySetException(exc);
                     }
                 }
+            };
+
+            private readonly IValueTaskSource<TResult> _source;
+
+            public ValueTaskSourceTask(IValueTaskSource<TResult> source)
+            {
+                _source = source;
+                source.OnCompleted(s_completionAction, this, ValueTaskSourceOnCompletedFlags.None);
             }
         }
 
@@ -558,7 +560,7 @@ namespace System.Threading.Tasks
         public bool IsCompleted
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => _obj == null || (ObjectIsTask ? UnsafeTask.IsCompleted : UnsafeValueTaskObject.IsCompleted);
+            get => _obj == null || (ObjectIsTask ? UnsafeTask.IsCompleted : UnsafeValueTaskSource.IsCompleted);
         }
 
         /// <summary>Gets whether the <see cref="ValueTask{TResult}"/> represents a successfully completed operation.</summary>
@@ -573,7 +575,7 @@ namespace System.Threading.Tasks
 #else
                     UnsafeTask.IsCompletedSuccessfully :
 #endif
-                    UnsafeValueTaskObject.IsCompletedSuccessfully);
+                    UnsafeValueTaskSource.IsCompletedSuccessfully);
         }
 
         /// <summary>Gets whether the <see cref="ValueTask{TResult}"/> represents a failed operation.</summary>
@@ -591,14 +593,14 @@ namespace System.Threading.Tasks
                     return UnsafeTask.IsFaulted;
                 }
 
-                IValueTaskObject<TResult> vt = UnsafeValueTaskObject;
+                IValueTaskSource<TResult> vt = UnsafeValueTaskSource;
                 return vt.IsCompleted && !vt.IsCompletedSuccessfully;
             }
         }
 
         /// <summary>Gets whether the <see cref="ValueTask{TResult}"/> represents a canceled operation.</summary>
         /// <remarks>
-        /// If the <see cref="ValueTask{TResult}"/> is backed by a result or by a <see cref="IValueTaskObject{TResult}"/>,
+        /// If the <see cref="ValueTask{TResult}"/> is backed by a result or by a <see cref="IValueTaskSource{TResult}"/>,
         /// this will always return false.  If it's backed by a <see cref="Task"/>, it'll return the
         /// value of the task's <see cref="Task{TResult}.IsCanceled"/> property.
         public bool IsCanceled => ObjectIsTask && UnsafeTask.IsCanceled;
@@ -607,7 +609,7 @@ namespace System.Threading.Tasks
         public TResult Result =>
             _obj == null ? _result :
             ObjectIsTask ? UnsafeTask.GetAwaiter().GetResult() :
-            UnsafeValueTaskObject.GetResult();
+            UnsafeValueTaskSource.GetResult();
 
         /// <summary>Gets an awaiter for this <see cref="ValueTask{TResult}"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

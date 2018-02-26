@@ -10,6 +10,8 @@ namespace System.Runtime.CompilerServices
     /// <summary>Provides an awaiter for a <see cref="ValueTask"/>.</summary>
     public readonly struct ValueTaskAwaiter : ICriticalNotifyCompletion, IValueTaskAwaiter
     {
+        /// <summary>Shim used to invoke an <see cref="Action"/> passed as the state argument to a <see cref="Action{Object}"/>.</summary>
+        internal static readonly Action<object> s_invokeActionDelegate = state => ((Action)state)();
         /// <summary>The value being awaited.</summary>
         private readonly ValueTask _value;
 
@@ -38,7 +40,7 @@ namespace System.Runtime.CompilerServices
                 }
                 else
                 {
-                    _value.UnsafeValueTaskObject.GetResult();
+                    _value.UnsafeValueTaskSource.GetResult();
                 }
             }
         }
@@ -52,7 +54,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext | ValueTaskObjectOnCompletedFlags.FlowExecutionContext);
+                _value.UnsafeValueTaskSource.OnCompleted(s_invokeActionDelegate, continuation, ValueTaskSourceOnCompletedFlags.UseSchedulingContext | ValueTaskSourceOnCompletedFlags.FlowExecutionContext);
             }
             else
             {
@@ -69,7 +71,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext);
+                _value.UnsafeValueTaskSource.OnCompleted(s_invokeActionDelegate, continuation, ValueTaskSourceOnCompletedFlags.UseSchedulingContext);
             }
             else
             {
@@ -80,9 +82,26 @@ namespace System.Runtime.CompilerServices
         /// <summary>Gets the task underlying <see cref="_value"/>.</summary>
         internal Task AsTask() => _value.AsTask();
 
-        /// <summary>Gets the task underlying the incomplete <see cref="_value"/>.</summary>
-        /// <remarks>This method is used when awaiting and IsCompleted returned false; thus we expect the value task to be wrapping a non-null task.</remarks>
-        Task IValueTaskAwaiter.GetTask() => _value.ObjectIsTask ? _value.UnsafeTask : null;
+#if CORECLR
+        void IValueTaskAwaiter.AwaitUnsafeOnCompleted(IAsyncStateMachineBox box)
+        {
+            if (_value.ObjectIsTask)
+            {
+                TaskAwaiter.UnsafeOnCompletedInternal(_value.UnsafeTask, box, continueOnCapturedContext: true);
+            }
+            else if (_value._obj != null)
+            {
+                _value.UnsafeValueTaskSource.OnCompleted(s_invokeAsyncStateMachineBox, box, ValueTaskSourceOnCompletedFlags.UseSchedulingContext);
+            }
+            else
+            {
+                TaskAwaiter.UnsafeOnCompletedInternal(Task.CompletedTask, box, continueOnCapturedContext: true);
+            }
+        }
+
+        /// <summary>Shim used to invoke <see cref="ITaskCompletionAction.Invoke"/> of the supplied <see cref="IAsyncStateMachineBox"/>.</summary>
+        internal static readonly Action<object> s_invokeAsyncStateMachineBox = state => ((IAsyncStateMachineBox)state).Invoke(null);
+#endif
     }
 
     /// <summary>Provides an awaiter for a <see cref="ValueTask{TResult}"/>.</summary>
@@ -109,7 +128,7 @@ namespace System.Runtime.CompilerServices
         public TResult GetResult() =>
             _value._obj == null ? _value._result :
             _value.ObjectIsTask ? _value.UnsafeTask.GetAwaiter().GetResult() :
-            _value.UnsafeValueTaskObject.GetResult();
+            _value.UnsafeValueTaskSource.GetResult();
 
         /// <summary>Schedules the continuation action for this ValueTask.</summary>
         public void OnCompleted(Action continuation)
@@ -120,7 +139,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext | ValueTaskObjectOnCompletedFlags.FlowExecutionContext);
+                _value.UnsafeValueTaskSource.OnCompleted(ValueTaskAwaiter.s_invokeActionDelegate, continuation, ValueTaskSourceOnCompletedFlags.UseSchedulingContext | ValueTaskSourceOnCompletedFlags.FlowExecutionContext);
             }
             else
             {
@@ -137,7 +156,7 @@ namespace System.Runtime.CompilerServices
             }
             else if (_value._obj != null)
             {
-                _value.UnsafeValueTaskObject.OnCompleted(continuation, ValueTaskObjectOnCompletedFlags.UseSchedulingContext);
+                _value.UnsafeValueTaskSource.OnCompleted(ValueTaskAwaiter.s_invokeActionDelegate, continuation, ValueTaskSourceOnCompletedFlags.UseSchedulingContext);
             }
             else
             {
@@ -148,16 +167,32 @@ namespace System.Runtime.CompilerServices
         /// <summary>Gets the task underlying <see cref="_value"/>.</summary>
         internal Task<TResult> AsTask() => _value.AsTask();
 
-        /// <summary>Gets the task underlying the incomplete <see cref="_value"/>.</summary>
-        /// <remarks>This method is used when awaiting and IsCompleted returned false; thus we expect the value task to be wrapping a non-null task.</remarks>
-        Task IValueTaskAwaiter.GetTask() => _value.ObjectIsTask ? _value.UnsafeTask : null;
+#if CORECLR
+        void IValueTaskAwaiter.AwaitUnsafeOnCompleted(IAsyncStateMachineBox box)
+        {
+            if (_value.ObjectIsTask)
+            {
+                TaskAwaiter.UnsafeOnCompletedInternal(_value.UnsafeTask, box, continueOnCapturedContext: true);
+            }
+            else if (_value._obj != null)
+            {
+                _value.UnsafeValueTaskSource.OnCompleted(ValueTaskAwaiter.s_invokeAsyncStateMachineBox, box, ValueTaskSourceOnCompletedFlags.UseSchedulingContext);
+            }
+            else
+            {
+                TaskAwaiter.UnsafeOnCompletedInternal(Task.CompletedTask, box, continueOnCapturedContext: true);
+            }
+        }
+#endif
     }
 
-    /// <summary>
-    /// Internal interface used to enable extract the Task from arbitrary ValueTask awaiters.
-    /// </summary>>
+#if CORECLR
+    /// <summary>Internal interface used to enable optimizations from <see cref="AsyncTaskMethodBuilder"/> on <see cref="ValueTask"/>.</summary>>
     internal interface IValueTaskAwaiter
     {
-        Task GetTask();
+        /// <summary>Invoked to set <see cref="ITaskCompletionAction.Invoke"/> of the <paramref name="box"/> as the awaiter's continuation.</summary>
+        /// <param name="box">The box object.</param>
+        void AwaitUnsafeOnCompleted(IAsyncStateMachineBox box);
     }
+#endif
 }

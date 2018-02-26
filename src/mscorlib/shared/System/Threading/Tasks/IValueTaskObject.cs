@@ -6,11 +6,11 @@ namespace System.Threading.Tasks
 {
     /// <summary>
     /// Flags passed from <see cref="ValueTask"/> and <see cref="ValueTask{TResult}"/> to
-    /// <see cref="IValueTaskObject.OnCompleted"/> and <see cref="IValueTaskObject{TResult}.OnCompleted"/>
+    /// <see cref="IValueTaskSource.OnCompleted"/> and <see cref="IValueTaskSource{TResult}.OnCompleted"/>
     /// to control behavior.
     /// </summary>
     [Flags]
-    public enum ValueTaskObjectOnCompletedFlags
+    public enum ValueTaskSourceOnCompletedFlags
     {
         /// <summary>
         /// No requirements are placed on how the continuation is invoked.
@@ -29,30 +29,42 @@ namespace System.Threading.Tasks
         FlowExecutionContext = 0x2,
     }
 
-    /// <summary>Represents a <see cref="Task"/>-like object that can be wrapped by a <see cref="ValueTask"/>.</summary>
-    public interface IValueTaskObject
+    /// <summary>Represents an object that can be wrapped by a <see cref="ValueTask"/>.</summary>
+    public interface IValueTaskSource
     {
-        /// <summary>Gets whether the <see cref="IValueTaskObject"/> represents a completed operation.</summary>
+        /// <summary>Gets whether the <see cref="IValueTaskSource"/> represents a completed operation.</summary>
         bool IsCompleted { get; }
-        /// <summary>Gets whether the <see cref="IValueTaskObject"/> represents a successfully completed operation.</summary>
+        
+        /// <summary>Gets whether the <see cref="IValueTaskSource"/> represents a successfully completed operation.</summary>
         bool IsCompletedSuccessfully { get; }
-        /// <summary>Schedules the continuation action for this <see cref="IValueTaskObject"/>.</summary>
-        void OnCompleted(Action continuation, ValueTaskObjectOnCompletedFlags flags);
-        /// <summary>Gets the result of the <see cref="IValueTaskObject"/>.</summary>
+        
+        /// <summary>Schedules the continuation action for this <see cref="IValueTaskSource"/>.</summary>
+        /// <param name="continuation">The continuation to invoke when the operation has completed.</param>
+        /// <param name="state">The state object to pass to <paramref name="continuation"/> when it's invoked.</param>
+        /// <param name="flags">The flags describing the behavior of the continuation.</param>
+        void OnCompleted(Action<object> continuation, object state, ValueTaskSourceOnCompletedFlags flags);
+
+        /// <summary>Gets the result of the <see cref="IValueTaskSource"/>.</summary>
         void GetResult();
     }
 
-    /// <summary>Represents a <see cref="Task{TResult}"/>-like object that can be wrapped by a <see cref="ValueTask{TResult}"/>.</summary>
+    /// <summary>Represents an object that can be wrapped by a <see cref="ValueTask{TResult}"/>.</summary>
     /// <typeparam name="TResult">Specifies the type of data returned from the object.</typeparam>
-    public interface IValueTaskObject<out TResult>
+    public interface IValueTaskSource<out TResult>
     {
-        /// <summary>Gets whether the <see cref="IValueTaskObject{TResult}"/> represents a completed operation.</summary>
+        /// <summary>Gets whether the <see cref="IValueTaskSource{TResult}"/> represents a completed operation.</summary>
         bool IsCompleted { get; }
-        /// <summary>Gets whether the <see cref="IValueTaskObject{TResult}"/> represents a successfully completed operation.</summary>
+        
+        /// <summary>Gets whether the <see cref="IValueTaskSource{TResult}"/> represents a successfully completed operation.</summary>
         bool IsCompletedSuccessfully { get; }
-        /// <summary>Schedules the continuation action for this <see cref="IValueTaskObject{TResult}"/>.</summary>
-        void OnCompleted(Action continuation, ValueTaskObjectOnCompletedFlags flags);
-        /// <summary>Gets the result of the <see cref="IValueTaskObject{TResult}"/>.</summary>
+        
+        /// <summary>Schedules the continuation action for this <see cref="IValueTaskSource{TResult}"/>.</summary>
+        /// <param name="continuation">The continuation to invoke when the operation has completed.</param>
+        /// <param name="state">The state object to pass to <paramref name="continuation"/> when it's invoked.</param>
+        /// <param name="flags">The flags describing the behavior of the continuation.</param>
+        void OnCompleted(Action<object> continuation, object state, ValueTaskSourceOnCompletedFlags flags);
+
+        /// <summary>Gets the result of the <see cref="IValueTaskSource{TResult}"/>.</summary>
         TResult GetResult();
     }
 }
