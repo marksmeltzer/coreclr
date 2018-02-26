@@ -391,7 +391,21 @@ namespace System.Runtime.CompilerServices
             }
             else if ((null != (object)default(TAwaiter)) && (awaiter is IValueTaskAwaiter))
             {
-                ((IValueTaskAwaiter)awaiter).AwaitUnsafeOnCompleted(box);
+                try
+                {
+                    ((IValueTaskAwaiter)awaiter).AwaitUnsafeOnCompleted(box);
+                }
+                catch (Exception e)
+                {
+                    // Whereas with Task the code that hooks up and invokes the continuation is all local to corelib,
+                    // with ValueTaskAwaiter we may be calling out to an arbitrary implementation of IValueTaskSource
+                    // wrapped in the ValueTask, and as such we protect against errant exceptions that may emerge.
+                    // We don't want such exceptions propagating back into the async method, which can't handle
+                    // exceptions well at that location in the state machine, especially if the exception may occur
+                    // after the ValueTaskAwaiter already successfully hooked up the callback, in which case it's possible
+                    // two different flows of execution could end up happening in the same async method call.
+                    AsyncMethodBuilderCore.ThrowAsync(e, targetContext: null);
+                }
             }
             else
             {
