@@ -689,15 +689,6 @@ namespace System.IO
 
         private static void ContinueWriteAsyncInternal( Task t, object s )
         {
-            // The options available on Unix for writing asynchronously to an arbitrary file 
-            // handle typically amount to just using another thread to do the synchronous write, 
-            // which is exactly  what this implementation does. This does mean there are subtle
-            // differences in certain FileStream behaviors between Windows and Unix when multiple 
-            // asynchronous operations are issued against the stream to execute concurrently; on 
-            // Unix the operations will be serialized due to the usage of a semaphore, but the 
-            // position/length information won't be updated until after the write has completed, 
-            // whereas on Windows it may happen before the write has completed.
-
             Debug.Assert( t.Status == TaskStatus.RanToCompletion );
             var thisRef = ( FileStream )s;
             thisRef.ContinueWriteAsyncInternal( );
