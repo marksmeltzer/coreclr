@@ -700,13 +700,27 @@ namespace System.IO
 
             Debug.Assert( t.Status == TaskStatus.RanToCompletion );
             var thisRef = ( FileStream )s;
+            thisRef.ContinueWriteAsyncInternal( );
+        }
+
+        private void ContinueWriteAsyncInternal( )
+        {
+            // The options available on Unix for writing asynchronously to an arbitrary file 
+            // handle typically amount to just using another thread to do the synchronous write, 
+            // which is exactly  what this implementation does. This does mean there are subtle
+            // differences in certain FileStream behaviors between Windows and Unix when multiple 
+            // asynchronous operations are issued against the stream to execute concurrently; on 
+            // Unix the operations will be serialized due to the usage of a semaphore, but the 
+            // position/length information won't be updated until after the write has completed, 
+            // whereas on Windows it may happen before the write has completed.
+
             try
             {
-                ReadOnlyMemory<byte> readOnlyMemory = thisRef._asyncState.ReadOnlyMemory;
-                thisRef._asyncState.ReadOnlyMemory = default( ReadOnlyMemory<byte> );
-                thisRef.WriteSpan( readOnlyMemory.Span );
+                ReadOnlyMemory<byte> readOnlyMemory = _asyncState.ReadOnlyMemory;
+                _asyncState.ReadOnlyMemory = default( ReadOnlyMemory<byte> );
+                WriteSpan( readOnlyMemory.Span );
             }
-            finally { thisRef._asyncState.Release( ); }
+            finally { _asyncState.Release( ); }
         }
         
         /// <summary>Sets the current position of this stream to the given value.</summary>
